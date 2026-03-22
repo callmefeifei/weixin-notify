@@ -36,28 +36,6 @@ Check login status:
 node ~/.weixin-notify/weixin-notify.mjs --status
 ```
 
-## Agent Login Flow (Two-Step)
-
-When token is expired and the agent needs to re-login, use the two-step flow
-so the QR code URL is visible to the user (not hidden in collapsed terminal output):
-
-**Step 1** — Get QR code URL:
-
-```bash
-node ~/.weixin-notify/weixin-notify.mjs --login-url
-```
-
-Stdout returns JSON: `{"qrcodeUrl":"https://...","qrcode":"..."}`.
-Parse it and display the `qrcodeUrl` link to the user so they can open it and scan with WeChat.
-
-**Step 2** — Wait for scan confirmation:
-
-```bash
-node ~/.weixin-notify/weixin-notify.mjs --login-wait
-```
-
-Polls until the user scans and confirms (up to 8 minutes). Prints `login_ok` to stdout on success.
-
 ## When to Use
 
 - After completing a long-running task (build, deploy, test suite)
@@ -85,11 +63,13 @@ where the user requested notification, send a message using:
 
     node ~/.weixin-notify/weixin-notify.mjs "message"
 
-If sending fails (exit code 1) or token is expired, use the two-step login flow:
+If sending fails (exit code 1) or token is expired, run the login command:
 
-1. Run `node ~/.weixin-notify/weixin-notify.mjs --login-url` to get JSON with the QR URL.
-   Parse it and display the `qrcodeUrl` link to the user in your message.
+    node ~/.weixin-notify/weixin-notify.mjs --login
 
-2. Run `node ~/.weixin-notify/weixin-notify.mjs --login-wait` to poll for scan confirmation.
-   When it prints `login_ok`, login is complete. Retry the original message.
+IMPORTANT: Tell the user "二维码可能被折叠了，请点击展开终端输出查看二维码并用微信扫码"
+(The QR code output may be collapsed/folded — please expand it to scan with WeChat).
+
+This command waits up to 8 minutes for the user to scan, then exits automatically.
+After login succeeds, retry sending the original message.
 ```

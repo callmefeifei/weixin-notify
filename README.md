@@ -60,13 +60,15 @@ where the user requested notification, send a message using:
 
     node ~/.weixin-notify/weixin-notify.mjs "message"
 
-If sending fails (exit code 1) or token is expired, use the two-step login flow:
+If sending fails (exit code 1) or token is expired, run the login command:
 
-1. Run `node ~/.weixin-notify/weixin-notify.mjs --login-url` to get JSON with the QR URL.
-   Parse it and display the `qrcodeUrl` link to the user in your message.
+    node ~/.weixin-notify/weixin-notify.mjs --login
 
-2. Run `node ~/.weixin-notify/weixin-notify.mjs --login-wait` to poll for scan confirmation.
-   When it prints `login_ok`, login is complete. Retry the original message.
+IMPORTANT: Tell the user "二维码可能被折叠了，请点击展开终端输出查看二维码并用微信扫码"
+(The QR code output may be collapsed/folded — please expand it to scan with WeChat).
+
+This command waits up to 8 minutes for the user to scan, then exits automatically.
+After login succeeds, retry sending the original message.
 ```
 
 之后你可以在 Claude Code 中说：
