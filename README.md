@@ -4,7 +4,7 @@
 
 ## 原理
 
-微信通过 [OpenClaw](https://github.com/nicexe/openclaw) 开放了一套 HTTP API（`ilinkai.weixin.qq.com`），支持个人微信号的消息收发。本项目将该协议从 OpenClaw 中剥离，用单个脚本实现消息推送，无需安装 OpenClaw。
+微信通过 [OpenClaw](https://github.com/callmefeifei/openclaw) 开放了一套 HTTP API（`ilinkai.weixin.qq.com`），支持个人微信号的消息收发。本项目将该协议从 OpenClaw 中剥离，用单个脚本实现消息推送，无需安装 OpenClaw。
 
 ```
 你的脚本/Agent ──► weixin-notify.mjs ──► ilink API ──► 微信
@@ -14,7 +14,7 @@
 
 ```bash
 # 1. 下载
-git clone https://github.com/nicexe/weixin-notify.git ~/.weixin-notify
+git clone https://github.com/callmefeifei/weixin-notify.git ~/.weixin-notify
 cd ~/.weixin-notify && npm install
 
 # 2. 扫码登录（微信扫终端中的二维码）

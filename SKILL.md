@@ -7,7 +7,7 @@ Send WeChat messages to the user from any AI agent (Claude Code, Cursor, etc.).
 Install the tool (one-time):
 
 ```bash
-cd ~/.weixin-notify && git clone https://github.com/nicexe/weixin-notify.git . && npm install
+git clone https://github.com/callmefeifei/weixin-notify.git ~/.weixin-notify && cd ~/.weixin-notify && npm install
 ```
 
 Login with WeChat (one-time, re-run if token expires):
