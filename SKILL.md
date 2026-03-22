@@ -63,7 +63,12 @@ where the user requested notification, send a message using:
 
     node ~/.weixin-notify/weixin-notify.mjs "message"
 
-If token is expired (exit code 1), tell the user to run:
+If sending fails (exit code 1) or token is expired, directly run the login command
+to show a QR code in the terminal for the user to scan:
 
     node ~/.weixin-notify/weixin-notify.mjs --login
+
+This is a long-running interactive command (waits up to 8 minutes for user to scan).
+Run it and let the user scan the QR code displayed in the terminal. After login succeeds,
+retry sending the original message.
 ```
