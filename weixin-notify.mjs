@@ -3,7 +3,9 @@
  * weixin-notify: Send WeChat messages via ilink API.
  *
  * Usage:
- *   node weixin-notify.mjs --login                    # QR code login
+ *   node weixin-notify.mjs --login                    # QR code login (interactive)
+ *   node weixin-notify.mjs --login-url                # get QR URL as JSON (agents)
+ *   node weixin-notify.mjs --login-wait               # wait for scan (after --login-url)
  *   node weixin-notify.mjs "hello"                    # send message
  *   node weixin-notify.mjs --to <userId> "hello"      # send to specific user
  *   echo "msg" | node weixin-notify.mjs --stdin       # pipe message
@@ -124,18 +126,102 @@ async function checkToken(token) {
 // QR Code Login
 // ---------------------------------------------------------------------------
 
-async function loginWithQr() {
-  console.error("[weixin-notify] Requesting QR code...\n");
+/**
+ * Fetch a fresh QR code from WeChat and return { qrcode, qrcodeUrl }.
+ */
+async function fetchQrCode() {
   const qrRes = await fetch(`${BASE_URL}/ilink/bot/get_bot_qrcode?bot_type=${BOT_TYPE}`);
   if (!qrRes.ok) throw new Error(`Failed to get QR code: ${qrRes.status}`);
   const qrData = await qrRes.json();
+  return { qrcode: qrData.qrcode, qrcodeUrl: qrData.qrcode_img_content };
+}
+
+/**
+ * --login-url: Print QR code URL to stdout (for agents to display to users).
+ * Also saves the qrcode key to state/qr-pending.json for --login-wait.
+ */
+async function loginUrl() {
+  const { qrcode, qrcodeUrl } = await fetchQrCode();
+  ensureDir(STATE_DIR);
+  fs.writeFileSync(
+    path.join(STATE_DIR, "qr-pending.json"),
+    JSON.stringify({ qrcode, qrcodeUrl, createdAt: Date.now() }),
+    "utf-8"
+  );
+  // stdout: machine-readable JSON for agents
+  console.log(JSON.stringify({ qrcodeUrl, qrcode }));
+}
+
+/**
+ * --login-wait: Poll for scan confirmation using a previously fetched QR code.
+ * Reads qrcode key from state/qr-pending.json (written by --login-url).
+ */
+async function loginWait() {
+  const pendingFile = path.join(STATE_DIR, "qr-pending.json");
+  if (!fs.existsSync(pendingFile)) {
+    throw new Error("No pending QR code. Run --login-url first.");
+  }
+  const { qrcode } = JSON.parse(fs.readFileSync(pendingFile, "utf-8"));
+
+  console.error("Waiting for WeChat scan...\n");
+  const deadline = Date.now() + QR_LOGIN_TIMEOUT_MS;
+  let scannedLogged = false;
+
+  while (Date.now() < deadline) {
+    const statusRes = await fetch(
+      `${BASE_URL}/ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(qrcode)}`,
+      { headers: { "iLink-App-ClientVersion": "1" } }
+    );
+    if (!statusRes.ok) throw new Error(`Status poll failed: ${statusRes.status}`);
+    const status = await statusRes.json();
+
+    if (status.status === "scaned" && !scannedLogged) {
+      console.error("Scanned! Please confirm on your phone...");
+      scannedLogged = true;
+    } else if (status.status === "confirmed") {
+      return saveLoginResult(status);
+    } else if (status.status === "expired") {
+      throw new Error("QR code expired. Run --login again.");
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  throw new Error("Login timed out (8 minutes). Run --login again.");
+}
+
+function saveLoginResult(status) {
+  if (!status.bot_token || !status.ilink_bot_id) {
+    throw new Error("Login confirmed but server did not return bot_token");
+  }
+  const account = {
+    token: status.bot_token,
+    botId: status.ilink_bot_id,
+    baseUrl: status.baseurl || BASE_URL,
+    userId: status.ilink_user_id,
+    savedAt: new Date().toISOString(),
+  };
+  saveAccount(account);
+  // Clean up pending QR
+  try { fs.unlinkSync(path.join(STATE_DIR, "qr-pending.json")); } catch {}
+  console.error(`Login successful!`);
+  console.error(`  Bot ID:  ${account.botId}`);
+  console.error(`  User ID: ${account.userId}`);
+  console.log("login_ok");
+  return account;
+}
+
+/**
+ * --login: Interactive login (QR in terminal). For human use in a real terminal.
+ */
+async function loginWithQr() {
+  console.error("[weixin-notify] Requesting QR code...\n");
+  const { qrcode, qrcodeUrl } = await fetchQrCode();
 
   // Display QR in terminal
   let qrDisplayed = false;
   try {
     const { default: qrterm } = await import("qrcode-terminal");
     await new Promise((resolve) => {
-      qrterm.generate(qrData.qrcode_img_content, { small: true }, (qr) => {
+      qrterm.generate(qrcodeUrl, { small: true }, (qr) => {
         console.error(qr);
         resolve();
       });
@@ -145,7 +231,7 @@ async function loginWithQr() {
 
   if (!qrDisplayed) {
     console.error("QR code URL (open in browser or scan):");
-    console.error(qrData.qrcode_img_content);
+    console.error(qrcodeUrl);
     console.error("\nTip: npm install qrcode-terminal for in-terminal QR display\n");
   }
 
@@ -157,7 +243,7 @@ async function loginWithQr() {
 
   while (Date.now() < deadline) {
     const statusRes = await fetch(
-      `${BASE_URL}/ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(qrData.qrcode)}`,
+      `${BASE_URL}/ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(qrcode)}`,
       { headers: { "iLink-App-ClientVersion": "1" } }
     );
     if (!statusRes.ok) throw new Error(`Status poll failed: ${statusRes.status}`);
@@ -167,26 +253,10 @@ async function loginWithQr() {
       console.error("Scanned! Please confirm on your phone...");
       scannedLogged = true;
     } else if (status.status === "confirmed") {
-      if (!status.bot_token || !status.ilink_bot_id) {
-        throw new Error("Login confirmed but server did not return bot_token");
-      }
-      const account = {
-        token: status.bot_token,
-        botId: status.ilink_bot_id,
-        baseUrl: status.baseurl || BASE_URL,
-        userId: status.ilink_user_id,
-        savedAt: new Date().toISOString(),
-      };
-      saveAccount(account);
-      console.error(`\nLogin successful!`);
-      console.error(`  Bot ID:  ${account.botId}`);
-      console.error(`  User ID: ${account.userId}`);
-      console.error(`  Saved:   ${ACCOUNT_FILE}\n`);
-      return account;
+      return saveLoginResult(status);
     } else if (status.status === "expired") {
       throw new Error("QR code expired. Run --login again.");
     }
-
     await new Promise((r) => setTimeout(r, 1500));
   }
   throw new Error("Login timed out (8 minutes). Run --login again.");
@@ -213,7 +283,9 @@ function printUsage() {
   console.error(`weixin-notify - Send WeChat messages from the command line
 
 Usage:
-  weixin-notify --login                    Login with QR code
+  weixin-notify --login                    Login with QR code (interactive)
+  weixin-notify --login-url                Get QR code URL as JSON (for agents)
+  weixin-notify --login-wait               Wait for QR scan (after --login-url)
   weixin-notify --status                   Check login status
   weixin-notify "message"                  Send message to yourself
   weixin-notify --to <userId> "message"    Send to a specific user
@@ -234,7 +306,19 @@ async function main() {
     return;
   }
 
-  // --login
+  // --login-url (agent step 1: get QR URL)
+  if (argv.includes("--login-url")) {
+    await loginUrl();
+    return;
+  }
+
+  // --login-wait (agent step 2: poll for scan confirmation)
+  if (argv.includes("--login-wait")) {
+    await loginWait();
+    return;
+  }
+
+  // --login (interactive: QR in terminal)
   if (argv.includes("--login")) {
     await loginWithQr();
     return;
